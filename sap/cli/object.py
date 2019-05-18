@@ -1,11 +1,40 @@
 """ADT Object CLI templates"""
 
 import sys
+import os
 
 import sap.cli.core
+import sap.errors
 
 import sap.adt
 import sap.adt.wb
+
+
+_NAME_INDEX = 0
+
+
+def object_name_from_source_file(filesystem_path):
+    """Splits the given file system path into object name and suffix.
+
+       It is expected that the object name makes the file name prefix up to
+       the first dot.
+
+       Example:
+         ./src/object.abap
+                      ^^^^--- suffix (the 2nd return value)
+               ^^^^^^-------- object name (the 1st return value)
+    """
+
+    basename = os.path.basename(filesystem_path)
+    parts = filesystem_path.split('.', 1)
+
+    if len(parts) == 1:
+        raise sap.errors.SAPCliError(f'{basename} does not match the pattern NAME.SUFFIX')
+
+    if not parts[_NAME_INDEX]:
+        raise sap.errors.SAPCliError(f'{basename} does not contain NAME from the pattern NAME.SUFFIX')
+
+    return parts
 
 
 class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
@@ -54,7 +83,7 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
         """
 
         write_cmd = commands.add_command(self.write_object_text, name='write')
-        write_cmd.append_argument('name')
+        write_cmd.append_argument('name', help='an object name or - for getting it from the source file name')
         write_cmd.append_argument('source', help='a path or - for stdin')
         write_cmd.append_argument('-a', '--activate', action='store_true',
                                   default=False, help='activate after write')
@@ -122,7 +151,15 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
     def write_object_text(self, connection, args):
         """Changes source code of the given program include"""
 
+        name = args.name
         text = None
+
+        if name == '-':
+            if args.source == '-':
+                sys.stderr.write('Object name or Source file must be specified')
+                return 1
+
+            name, _ = object_name_from_source_file(args.source)
 
         if args.source == '-':
             text = sys.stdin.readlines()
@@ -130,7 +167,7 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
             with open(args.source, 'r') as filesrc:
                 text = filesrc.readlines()
 
-        obj = self.instance(connection, args.name, args)
+        obj = self.instance(connection, name, args)
 
         with obj.open_editor(corrnr=args.corrnr) as editor:
             editor.write(''.join(text))

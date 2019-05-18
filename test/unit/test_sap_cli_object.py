@@ -211,6 +211,19 @@ class TestCommandGroupObjectTemplate(unittest.TestCase):
         self.assertEqual(fake_open.call_args_list, [call('source.abap', 'r')])
         self.group.open_editor_mock.write.assert_called_once_with('source code')
 
+    def test_write_object_name_from_file(self):
+        connection = MagicMock()
+
+        args = self.parse_args('write', '-', 'objname.abap')
+
+        self.assertEqual(args.source, 'objname.abap')
+
+        with patch('sap.cli.object.open', mock_open(read_data='source code')) as fake_open:
+            args.execute(connection, args)
+
+        self.group.instace_mock.assert_called_once_with(connection, 'objname', args, metadata=None)
+        self.assertEqual(fake_open.call_args_list, [call('objname.abap', 'r')])
+
     def test_write_object_text_stdin_corrnr(self):
         connection = MagicMock()
 

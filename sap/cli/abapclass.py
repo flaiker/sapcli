@@ -24,16 +24,29 @@ class CommandGroup(sap.cli.object.CommandGroupObjectMaster):
 
         clas = sap.adt.Class(connection, name, package=package, metadata=metadata)
 
-        if not hasattr(args, 'type'):
-            return clas
+        typ = None
+        if args.name == '-':
+            _, suffix = sap.cli.object.object_name_from_source_file(args.source)
 
-        if args.type == 'definitions':
+            if suffix == 'clas.abap':
+                return clas
+
+            typ = {
+                'clas.locals_def.abap': 'definitions',
+                'clas.testclasses.abap': 'testclasses',
+                'clas.locals_imp.abap': 'implementations'}[suffix]
+        elif not hasattr(args, 'type'):
+            return clas
+        else:
+            typ = args.type
+
+        if typ == 'definitions':
             return clas.definitions
 
-        if args.type == 'implementations':
+        if typ == 'implementations':
             return clas.implementations
 
-        if args.type == 'testclasses':
+        if typ == 'testclasses':
             return clas.test_classes
 
         return clas
