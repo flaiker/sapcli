@@ -8,6 +8,35 @@ import sap.cli.object
 
 SOURCE_TYPES = ['main', 'definitions', 'implementations', 'testclasses']
 
+FILE_NAME_SUFFIX_TYPES = {
+    'clas.apab': None,
+    'clas.locals_def.abap': 'definitions',
+    'clas.testclasses.abap': 'testclasses',
+    'clas.locals_imp.abap': 'implementations'
+}
+
+def instance_from_args(connection, name, typ, metadata):
+    """Converts command line arguments to an instance of an ADT class
+       based on the given typ.
+    """
+
+    package = None
+    if hasattr(args, 'package'):
+        package = args.package
+
+    clas = sap.adt.Class(connection, name, package=package, metadata=metadata)
+
+    if typ == 'definitions':
+        return clas.definitions
+
+    if typ == 'implementations':
+        return clas.implementations
+
+    if typ == 'testclasses':
+        return clas.test_classes
+
+    return clas
+
 
 class CommandGroup(sap.cli.object.CommandGroupObjectMaster):
     """Commands for Class"""
@@ -18,38 +47,21 @@ class CommandGroup(sap.cli.object.CommandGroupObjectMaster):
         self.define()
 
     def instance(self, connection, name, args, metadata=None):
-        package = None
-        if hasattr(args, 'package'):
-            package = args.package
-
-        clas = sap.adt.Class(connection, name, package=package, metadata=metadata)
-
         typ = None
-        if args.name == '-':
-            _, suffix = sap.cli.object.object_name_from_source_file(args.source)
-
-            if suffix == 'clas.abap':
-                return clas
-
-            typ = {
-                'clas.locals_def.abap': 'definitions',
-                'clas.testclasses.abap': 'testclasses',
-                'clas.locals_imp.abap': 'implementations'}[suffix]
-        elif not hasattr(args, 'type'):
-            return clas
-        else:
+        if hasattr(args, 'type'):
             typ = args.type
 
-        if typ == 'definitions':
-            return clas.definitions
+        return instance_from_args(connection, name, typ, args, metadata)
 
-        if typ == 'implementations':
-            return clas.implementations
+    def instance_from_file_path(self, connection, filepath, args, metadata=None):
+        name, suffix = sap.cli.object.object_name_from_source_file(args.source)
 
-        if typ == 'testclasses':
-            return clas.test_classes
+        try:
+            typ = FILE_NAME_SUFFIX_TYPES[suffix]
+        except KeyError:
+            raise InvalidCommandLineError(f'Unknown class file name suffix: {suffix}')
 
-        return clas
+        return instance_from_args(connect, name, typ, args, metadata)
 
     def define_read(self, commands):
         read_cmd = super(CommandGroup, self).define_read(commands)

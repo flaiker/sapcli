@@ -2,8 +2,10 @@
 
 import sys
 import os
+import collections
 
 import sap.cli.core
+from sap.cli.core import InvalidCommandLineError
 import sap.errors
 
 import sap.adt
@@ -37,6 +39,37 @@ def object_name_from_source_file(filesystem_path):
     return parts
 
 
+def write_args_to_objects(command, args):
+    """Converts parameters of the action 'write object' into a iteration of
+       objects with the text content
+    """
+
+    name = args.name
+    text = None
+
+    if name == '-':
+        for filepath in args.source:
+            if filepath == '-':
+                raise InvalidCommandLineError('Source file cannot be - when Object name is - too')
+
+            with open(filepath, 'r') as filesrc:
+                text = filesrc.readlines()
+
+            yield return (command.instance_from_file_path(connectoin, filepath, args), text)
+
+    elif len(args.source) == 1:
+        if args.source[0] == '-':
+            text = sys.stdin.readlines()
+        else:
+            with open(args.source[0], 'r') as filesrc:
+                text = filesrc.readlines()
+
+        yield return (command.instance(connection, args.name, args), text)
+
+    else:
+        raise InvalidCommandLineError('Source file can be a list when Object name is -')
+
+
 class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
     """Template Class converting command line parameters to ADT Object methods
        calls.
@@ -46,6 +79,15 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
         """Returns new instance of the ADT Object proxy class"""
 
         raise NotImplementedError()
+
+    def instance_from_file_path(self, connection, filepath, args, metadata=None):
+        """Returns new instance of the ADT Object proxy class
+           where the object name should be deduced from
+           the given file path.
+        """
+
+        name, _ = object_name_from_source_file(filepath)
+        obj = self.instance(connection, name, args, metadata=metadata)
 
     def build_new_metadata(self, connection, args):
         """Creates an instance of the ADT Object Metadata class for a new object"""
@@ -83,8 +125,10 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
         """
 
         write_cmd = commands.add_command(self.write_object_text, name='write')
-        write_cmd.append_argument('name', help='an object name or - for getting it from the source file name')
-        write_cmd.append_argument('source', help='a path or - for stdin')
+        write_cmd.append_argument('name',
+                                  help='an object name or - for getting it from the source file name')
+        write_cmd.append_argument('source', nargs='+',
+                                  help='a path or - for stdin; multiple allowed only when name = -')
         write_cmd.append_argument('-a', '--activate', action='store_true',
                                   default=False, help='activate after write')
         write_cmd.declare_corrnr()
@@ -151,29 +195,17 @@ class CommandGroupObjectTemplate(sap.cli.core.CommandGroup):
     def write_object_text(self, connection, args):
         """Changes source code of the given program include"""
 
-        name = args.name
-        text = None
+        toactivate = collections.OrderedDict()
 
-        if name == '-':
-            if args.source == '-':
-                sys.stderr.write('Object name or Source file must be specified')
-                return 1
+        for obj in write_args_to_objects(self, args):
+            with obj.open_editor(corrnr=args.corrnr) as editor:
+                editor.write(''.join(text))
 
-            name, _ = object_name_from_source_file(args.source)
-
-        if args.source == '-':
-            text = sys.stdin.readlines()
-        else:
-            with open(args.source, 'r') as filesrc:
-                text = filesrc.readlines()
-
-        obj = self.instance(connection, name, args)
-
-        with obj.open_editor(corrnr=args.corrnr) as editor:
-            editor.write(''.join(text))
+            toactivate[obj.name] = obj
 
         if args.activate:
-            sap.adt.wb.activate(obj)
+            for obj in toactivate.values():
+                sap.adt.wb.activate(obj)
 
     def activate_objects(self, connection, args):
         """Actives the given object."""
